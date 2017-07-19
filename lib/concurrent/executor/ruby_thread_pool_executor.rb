@@ -42,17 +42,17 @@ module Concurrent
 
     # @!macro thread_pool_executor_attr_reader_largest_length
     def largest_length
-      synchronize { @largest_length }
+      @largest_length.value
     end
 
     # @!macro thread_pool_executor_attr_reader_scheduled_task_count
     def scheduled_task_count
-      synchronize { @scheduled_task_count }
+      @scheduled_task_count.value
     end
 
     # @!macro thread_pool_executor_attr_reader_completed_task_count
     def completed_task_count
-      synchronize { @completed_task_count }
+      @completed_task_count.value
     end
 
     # @!macro executor_service_method_can_overflow_question
@@ -103,7 +103,7 @@ module Concurrent
 
     # @!visibility private
     def worker_task_completed
-      synchronize { @completed_task_count += 1 }
+      @completed_task_count.increment
     end
 
     private
@@ -129,9 +129,9 @@ module Concurrent
       @ready                = [] # used as a stash (most idle worker is at the start)
       @queue                = [] # used as queue
       # @ready or @queue is empty at all times
-      @scheduled_task_count = 0
-      @completed_task_count = 0
-      @largest_length       = 0
+      @scheduled_task_count = Concurrent::AtomicFixnum.new
+      @completed_task_count = Concurrent::AtomicFixnum.new
+      @largest_length       = Concurrent::AtomicFixnum.new
       @ruby_pid             = $$ # detects if Ruby has forked
 
       @gc_interval  = opts.fetch(:gc_interval, @idletime / 2.0).to_i # undocumented
@@ -148,7 +148,7 @@ module Concurrent
       ns_reset_if_forked
 
       if ns_assign_worker(*args, &task) || ns_enqueue(*args, &task)
-        @scheduled_task_count += 1
+        @scheduled_task_count.increment
       else
         handle_fallback(*args, &task)
       end
@@ -227,7 +227,7 @@ module Concurrent
       return if @pool.size >= @max_length
 
       @pool << (worker = Worker.new(self))
-      @largest_length = @pool.length if @pool.length > @largest_length
+      @largest_length.value = @pool.length if @pool.length > @largest_length.value
       worker
     end
 
@@ -283,10 +283,10 @@ module Concurrent
         @queue.clear
         @ready.clear
         @pool.clear
-        @scheduled_task_count = 0
-        @completed_task_count = 0
-        @largest_length       = 0
-        @ruby_pid             = $$
+        @scheduled_task_count.value = 0
+        @completed_task_count.value = 0
+        @largest_length.value       = 0
+        @ruby_pid                   = $$
       end
     end
 
